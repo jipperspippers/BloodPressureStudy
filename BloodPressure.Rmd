@@ -1,0 +1,75 @@
+---
+title: "BloodPressure"
+output: html_notebook
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(MASS)
+library(onewaytests)
+library(readxl)
+```
+
+# Reading and cleaning the model
+```{r}
+bp <- read_xlsx("BloodPressure.xlsx")
+bp %>% mutate(married = replace(married, married == 'N', 0))%>% 
+  mutate(married = replace(married, married == 'Y', 1)) %>%
+  mutate(gender = replace(gender, gender == 'F', 0)) %>%
+  mutate(gender = replace(gender, gender == 'M', 1)) %>%
+  mutate(smoke = replace(smoke, smoke == 'N', 0)) %>%
+  mutate(smoke = replace(smoke, smoke =='Y', 1))-> bp
+
+class(bp$gender) = "double"
+class(bp$married) = "double"
+class(bp$smoke) = "double"
+bp
+```
+```{r}
+bp_full <- lm(data=bp, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
+summary(bp_full)
+```
+
+# Residual diagnostics
+```{r}
+qqnorm(bp_full$residuals)
+qqline(bp_full$residuals)
+hist(bp_full$residuals)
+augment(bp_full)
+ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
+boxcox(bp_full)
+shapiro.test(bp_full$residuals)
+# add bf test here; didnt work earlier
+```
+
+- p-value > 0.05, we can conclude the error looks from a normal population
+- fitted vs residual values look randomly scattered
+- normal qq plot looks like its in a stright line
+- data seems to be cleaned up here.
+
+
+# Graphs of SBP and covariates
+```{r}
+bp  %>% pivot_longer(c(gender:educatn), names_to = "xnames", values_to = "x")%>% 
+  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth()
+```
+
+
+# Checks for multicollinearity
+```{r}
+# add graphs for correlation matrix
+bp %>%  dplyr::select(-sbp) -> bp_cor
+cor(bp_cor)
+```
+
+
+# Backwards elimination
+
+Which criterion is better?
+
+
+# AIC/BIC
+# $C_p$ 
+# $SSE_p$ / $R^2$
+# $MSE_p$ / $R^2_{adj}$
+# PRESS
