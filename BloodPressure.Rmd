@@ -92,7 +92,7 @@ corrplot(bp_cor)
 - Estimated regression coefficients with an opposite sign of that expected from theoretical considerations or prio e
 - Standard error is not large -- not a sign 
 - There is a small change in the coefficient of determination when a variable is added/delted
-- High correlation between predictor variables overwt, weight, height and BMI -- related because ...
+- High correlation between predictor variables overwt, weight, height and BMI -- related because ... (source)
 - high correlation between chldbear and gender -- makes sense because only women can bear children.
 - add interaction terms 
 
@@ -186,11 +186,11 @@ bp.inf
 
 # Graphical Diagnostics for influence
 ```{r}
-p1 <- ols_plot_added_variable(bp_reduced)
+#p1 <- ols_plot_added_variable(bp_reduced)
 p2 <- ols_plot_cooksd_chart(bp_reduced)
 p3 <- ols_plot_dffits(bp_reduced)
 p4 <- ols_plot_resid_lev(bp_reduced)
-p5 <- ols_plot_reside_stud_fit(bp_reduced)
+p5 <- ols_plot_resid_stud_fit(bp_reduced)
 p6 <- ols_plot_dfbetas(bp_reduced)
 ```
 
@@ -204,7 +204,7 @@ p6 <- ols_plot_dfbetas(bp_reduced)
 
 ```{r}
 #With interactions
-bp_full_int <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn + overwt + income:educatn + gender:chldbear + stress:alcohol + stress:chldbear + stress:weight + stress:overwt + income:age + weight:overwt + bmi:weight + bmi:height  + alcohol:smoke  + income:stress + educatn:stress  + smoke:exercise + income:chldbear  + alcohol:income + chldbear:married + salt:exercise)
+bp_full_int <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn + overwt + income:educatn + gender:chldbear + stress:alcohol  + stress:weight + stress:overwt + income:age + weight:overwt + bmi:weight + bmi:height  + alcohol:smoke + height:gender + weight:gender + income:stress + educatn:stress  + smoke:exercise + income:chldbear  + chldbear:married + salt:exercise)
 
 summary(bp_full_int)
 ```
@@ -223,16 +223,15 @@ stepAIC(bp_full_int, direction = "backward")
 
 
 ```{r}
-lm_AIC_int <- lm(sbp ~ gender + married + smoke + exercise + age + height + race + 
-    alcohol + trt + bmi + stress + chldbear + income + educatn + 
-    overwt + income:educatn + trt:overwt + married:stress + 
-    smoke:exercise + alcohol:educatn, data=bp_train)
-summary(lm_AIC_int)
+bp_reduced_int <- lm(sbp ~ gender + smoke + exercise + age + weight + alcohol + trt + 
+    stress + salt + chldbear + income + educatn + income:educatn + 
+    weight:stress + age:income + smoke:alcohol + exercise:salt, data=bp_train)
+summary(bp_reduced_int)
 ```
 
 
 ```{r}
-anova(lm_AIC_int, bp_full_int)
+anova(bp_reduced_int, bp_full_int)
 ```
 
 
@@ -245,7 +244,7 @@ anova(lm_AIC_int, bp_full_int)
 #    smoke:exercise + alcohol:educatn
 
 bp_valid %>% mutate(`income:educatn` = income*educatn, `trt:overwt` = trt*overwt, `married:stress` = married*stress, `smoke:exercise` = smoke*exercise, `alcohol:educatn` = alcohol*educatn) -> bp_valid_int
-anova(lm_AIC_int)
+anova(bp_reduced_int)
 
 pred_cols_int <- c('gender', 'married', 'smoke', 'exercise', 'age', 'height', 'race', 'alcohol' , 'trt', 'bmi', 'stress', 'chldbear', 'income', 'educatn', 'overwt', 'income:educatn', 'trt:overwt', 'smoke:exercise', 'alcohol:educatn')
 
@@ -265,8 +264,15 @@ PRESS(lm_AIC_int)
 ```
 
 
+# Graphical Diagnostics 
 
-
+```{r}
+p2_int <- ols_plot_cooksd_chart(bp_reduced)
+p3_int <- ols_plot_dffits(bp_reduced)
+p4_int <- ols_plot_resid_lev(bp_reduced)
+p5_int <- ols_plot_resid_stud_fit(bp_reduced)
+p6_int <- ols_plot_dfbetas(bp_reduced)
+```
 
 
 
