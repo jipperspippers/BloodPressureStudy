@@ -8,9 +8,12 @@ library(tidyverse)
 library(MASS)
 library(onewaytests)
 library(readxl)
+library(leaps)
+library(corrplot)
+
 ```
 
-# Reading and cleaning the model
+# Reading and cleaning the data frame
 ```{r}
 bp <- read_xlsx("BloodPressure.xlsx")
 bp %>% mutate(married = replace(married, married == 'N', 0))%>% 
@@ -24,9 +27,21 @@ class(bp$gender) = "double"
 class(bp$married) = "double"
 class(bp$smoke) = "double"
 bp
+# Making a testing set and a validation set
+set.seed(1004274037)
+bp_samp <- sample(1:500, 300, replace=FALSE)
+bp_model <- bp[bp_samp,]
+bp_valid <- bp[-bp_samp,]
+
+bp_model
+bp_valid
+
 ```
+- set aside 60% observations to create the model and 40% to test the model
+
 ```{r}
-bp_full <- lm(data=bp, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
+#No interactions
+bp_full <- lm(data=bp_model, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
 summary(bp_full)
 ```
 
@@ -35,41 +50,144 @@ summary(bp_full)
 qqnorm(bp_full$residuals)
 qqline(bp_full$residuals)
 hist(bp_full$residuals)
-augment(bp_full)
+#augment(bp_full)
 ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
 boxcox(bp_full)
-shapiro.test(bp_full$residuals)
 # add bf test here; didnt work earlier
 ```
 
-- p-value > 0.05, we can conclude the error looks from a normal population
 - fitted vs residual values look randomly scattered
 - normal qq plot looks like its in a stright line
 - data seems to be cleaned up here.
 
 
+Tests:  
+```{r}
+shapiro.test(bp_full$residuals)
+```
+
+- p-value > 0.05, we can conclude the error looks from a normal population
+
+
+```{r}
+#With interactions
+bp_full_int <- lm(data=bp_model, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn + overwt + income:educatn + age:chldbear + age:stress + trt:age + trt:overwt + trt:smoke + trt:chldbear + bmi:overwt + stress:alcohol + stress:chldbear + stress:weight + stress:overwt + income:age + trt:stress + weight:overwt + bmi:weight + bmi:height + smoke:overwt + gender:smoke + alcohol:smoke + salt:stress + income:stress + educatn:stress + race:stress + married:stress + smoke:exercise + income:chldbear + educatn:alcohol + smoke:educatn + alcohol:salt + alcohol:income + chldbear:married)
+
+summary(bp_full_int)
+```
+
+- since $R^2$ is really low for blood pressure, we need to add more terms. 
+- adding interaction variables makes sense because we know that certain things
+rely on eachother
+
 # Graphs of SBP and covariates
 ```{r}
-bp  %>% pivot_longer(c(gender:educatn), names_to = "xnames", values_to = "x")%>% 
-  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth()
+bp_model  %>% pivot_longer(c(gender:educatn), names_to = "xnames", values_to = "x")%>% 
+  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") 
 ```
 
 
-# Checks for multicollinearity
+# Checks for multicollinearity for main effect
 ```{r}
 # add graphs for correlation matrix
-bp %>%  dplyr::select(-sbp) -> bp_cor
-cor(bp_cor)
+
+bp_cor <- cor(bp_model)
+
+corrplot(bp_cor)
 ```
+
+
+
+# Multicollinearity
+1 Large change in the stimated regression coefficient when a predictor variable is added or deleted
+2 Nonsignificant results in the t-tests on the regression coefficicents for important predictor variables 
+
+
 
 
 # Backwards elimination
 
-Which criterion is better?
+
+# AIC/BIC without interaction terms
+```{r}
+stepAIC(bp_full, direction = "backward")
+```
+
+# AIC/BIC with interaction terms
+```{r}
+stepAIC(bp_full_int, direction = "backward")
+```
 
 
-# AIC/BIC
-# $C_p$ 
-# $SSE_p$ / $R^2$
-# $MSE_p$ / $R^2_{adj}$
-# PRESS
+# Comparing a model with interaction variables against the main effect
+
+```{r}
+#AIC = 3223.51
+lm_AIC_int <- lm(sbp ~ gender + married + smoke + exercise + age + height + race + 
+    alcohol + trt + bmi + stress + chldbear + income + educatn + 
+    overwt + income:educatn + age:chldbear + age:stress + trt:overwt + 
+    smoke:trt + smoke:alcohol + stress:educatn + married:stress + 
+    smoke:exercise + alcohol:educatn, data=bp_model)
+summary(lm_AIC_int)
+
+
+#AIC=3240.05
+lm_AIC <- lm(sbp ~ married + smoke + exercise + age + height + overwt + alcohol + 
+    trt + bmi + stress + income, data=bp_model)
+summary(lm_AIC)
+```
+
+Checking if removing the terms is too much:  
+```{r}
+anova(lm_AIC, bp_full)
+anova(lm_AIC_int, bp_full_int)
+```
+
+- $H_0:$ full model and reduced model give similar effects vs. $H_a:$ full model is better.
+
+- Without interaction terms model -- P-value > 0.05, reduced model is sufficient
+- With interaction terms model -- P-value > 0.05, reduced model is sufficient
+
+
+
+
+
+
+
+
+```{r}
+leaps <- regsubsets(sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn, data=bp_model, nbest = 10)
+s <- summary(leaps)
+n <- length(bp_model$sbp)
+p <- apply(s$which, 1, sum)
+s$aic <- s$bic - log(n)*p + 2*p
+with(s, round(cbind(which, rsq, adjr2,cp,bic,aic),3))
+options(max.print=9999999)
+```
+
+Things left to do:
+- make sure that we do the DFFITS and show diagrams
+- validate model with test set and modelling set
+- make the visual part look a bit better  
+
+
+
+# Model Validation
+```{r}
+# model validation for 
+```
+
+
+
+
+# DFFITS
+
+
+
+# Conclusion
+
+- AIC with the interaction terms are much better.
+- $R^2$ is better with the interaction terms
+- both models are significant
+- $R^2$ in general is low, we may need more predictors
+- $R^2$ is really low even after adding interaction terms, this means we are missing a couple of important predictors
