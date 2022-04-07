@@ -6,6 +6,7 @@ author: John Ma,
 
 
 
+
 # Packages
 ```{r, warning=FALSE, message=FALSE}
 library(tidyverse)
@@ -46,6 +47,7 @@ bp_valid
 - set aside 60% observations to create the model and 40% to test the model
 
 
+
 # Main Effect Full Model
 
 ```{r}
@@ -56,7 +58,7 @@ summary(bp_full)
 
 
 
-# Residual diagnostics
+# Residual diagnostics of the main effect model
 ```{r}
 qqnorm(bp_full$residuals)
 qqline(bp_full$residuals)
@@ -64,6 +66,7 @@ hist(bp_full$residuals)
 #augment(bp_full)
 ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
 boxcox(bp_full)
+shapiro.test(bp_full$residuals)
 # add bf test here; didnt work earlier
 ```
 
@@ -91,14 +94,15 @@ corrplot(bp_cor)
 # Multicollinearity
 - Estimated regression coefficients with an opposite sign of that expected from theoretical considerations or prio e
 - Standard error is not large -- not a sign 
-- There is a small change in the coefficient of determination when a variable is added/delted
 - High correlation between predictor variables overwt, weight, height and BMI -- related because ... (source)
 - high correlation between chldbear and gender -- makes sense because only women can bear children.
 - add interaction terms 
 
 VIF: 
 ```{r}
-
+R_sqr <-0.2188
+VIF <- 1/(1-R_sqr^2)
+VIF
 ```
 
 
@@ -106,7 +110,7 @@ VIF:
 # Backwards elimination
 
 
-# AIC/BIC 
+## AIC/BIC 
 ```{r}
 stepAIC(bp_full, direction = "backward")
 ```
@@ -125,7 +129,6 @@ anova(bp_reduced, bp_full)
 - $H_0:$ full model and reduced model give similar effects vs. $H_a:$ full model is better.
 
 - Without interaction terms model -- P-value > 0.05, reduced model is sufficient
-- With interaction terms model -- P-value > 0.05, reduced model is sufficient
 
 
 
@@ -194,8 +197,6 @@ p5 <- ols_plot_resid_stud_fit(bp_reduced)
 p6 <- ols_plot_dfbetas(bp_reduced)
 ```
 
-
-
 # Remedial Measures
 
 
@@ -213,6 +214,17 @@ summary(bp_full_int)
 - added interaction terms to see if $R^2$ goes up significantly or not.
 
 
+```{r}
+qqnorm(bp_full_int$residuals)
+qqline(bp_full_int$residuals)
+hist(bp_full_int$residuals)
+#augment(bp_full)
+ggplot(bp_full_int, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
+boxcox(bp_full_int)
+shapiro.test(bp_full_int$residuals)
+```
+- This model looks like it has residuals that are
+
 
 # AIC/BIC with interaction terms
 ```{r}
@@ -228,11 +240,19 @@ bp_reduced_int <- lm(sbp ~ gender + smoke + exercise + age + weight + alcohol + 
     weight:stress + age:income + smoke:alcohol + exercise:salt, data=bp_train)
 summary(bp_reduced_int)
 ```
-
+# Multicollinearity
+VIF:
+```{r}
+R_int <- 0.2611
+VIF_int <- 1/(1-R_int^2)
+VIF_int
+```
+- low VIF, not likely to have a multicollinearity problem with thi\s model
 
 ```{r}
 anova(bp_reduced_int, bp_full_int)
 ```
+- With interaction terms model -- P-value > 0.05, reduced model is sufficient
 
 
 # Cross Validation for interaction model
@@ -275,7 +295,7 @@ p6_int <- ols_plot_dfbetas(bp_reduced)
 ```
 
 
-
+# Remedial measures
 
 
 
