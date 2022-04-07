@@ -100,8 +100,8 @@ corrplot(bp_cor)
 
 VIF: 
 ```{r}
-R_sqr <-0.2188
-VIF <- 1/(1-R_sqr^2)
+R_sqr <- summary(bp_full)$r.squared
+VIF <- 1/(1-R_sqr)
 VIF
 ```
 
@@ -165,7 +165,7 @@ PRESS(bp_reduced)
 # Graphs of SBP and covariates
 ```{r}
 bp_train  %>% pivot_longer(c(gender:educatn), names_to = "xnames", values_to = "x")%>% 
-  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") 
+  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
 ```
 
 # Influence Diagnostics
@@ -243,11 +243,11 @@ summary(bp_reduced_int)
 # Multicollinearity
 VIF:
 ```{r}
-R_int <- 0.2611
-VIF_int <- 1/(1-R_int^2)
+R_int <- summary(bp_full_int)$r.squared
+VIF_int <- 1/(1-R_int)
 VIF_int
 ```
-- low VIF, not likely to have a multicollinearity problem with thi\s model
+- low VIF, not likely to have a multicollinearity problem with this model
 
 ```{r}
 anova(bp_reduced_int, bp_full_int)
