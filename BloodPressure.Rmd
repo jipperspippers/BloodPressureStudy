@@ -74,7 +74,7 @@ summary(bp_full)
 
 
 
-# Residual diagnostics of the main effect model
+## Residual diagnostics of the main effect model
 ```{r}
 qqnorm(bp_full$residuals)
 qqline(bp_full$residuals)
@@ -95,9 +95,10 @@ lambda_full
 
 - p-value > 0.05, we can conclude the error looks from a normal population
 
+- bp test tells us that the variance of the error term is not constant 
 - looks like we can put a transformation on the model
 
-# Tranformed full model
+## Tranformed full model
 ```{r}
 k2 <- prod(bp_train$sbp^(1/300))
 k1 <- 1/(lambda_full*k2^(lambda_full-1))
@@ -107,7 +108,7 @@ bp_full_transformed <- lm(data=bp_train, sbp_full_transformed ~ gender + married
 summary(bp_full_transformed)
 ```
 
-# Residual testing again
+## Residual testing again
 ```{r}
 qqnorm(bp_full_transformed$residuals)
 qqline(bp_full_transformed$residuals)
@@ -127,7 +128,7 @@ bptest(bp_full_transformed, studentize = F)
 
 
 
-# Backwards elimination
+## Backwards elimination
 
 
 ## AIC/BIC 
@@ -140,29 +141,44 @@ bp_reduced <- lm(sbp ~ gender + smoke + exercise + height + alcohol + trt + bmi 
     chldbear, data=bp_train)
 summary(bp_reduced)
 ```
-- since chldbear has a large 
+- since gender has a large p value and in
 
 
-Checking if removing the terms is better using ANOVA:  
+ 
 ```{r}
-anova(bp_reduced, bp_full)
+bp_reduced2 <-  lm(sbp ~ chldbear + smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
+summary(bp_reduced2)
+```
+We drop gender, and see that the chldbear p-value > 0.929 therefore, we remove it.
+
+
+```{r}
+bp_reduced3 <-  lm(sbp ~ smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
+summary(bp_reduced3)
+stepAIC(bp_reduced3)
+```
+- Everything looks significant here.
+- AIC = 1940.93
+
+
+Checking if removing the terms is better using ANOVA: 
+```{r}
+anova(bp_reduced3, bp_full)
 ```
 
 - $H_0:$ full model and reduced model give similar effects vs. $H_a:$ full model is better.
-
 - Without interaction terms model -- P-value > 0.05, reduced model is sufficient
 
 
 
-
-# Cross validation for main effect model
+## Cross validation for main effect model
 
 ```{r}
-anova(bp_reduced)
+
 #preds_cols <- c('gender' , 'married' , 'smoke' , 'exercise' , 'age' , 'weight' , 'height' , 'overwt' , 'race' , 'alcohol' , 'trt' ,'bmi' ,'stress' , 'salt' , 'chldbear' , 'income' , 'educatn')
 
-preds_cols <- c('gender' , 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi' ,'chldbear' )
-pred_bp <- predict(bp_reduced, bp_valid[preds_cols])
+preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
+pred_bp <- predict(bp_reduced3, bp_valid[preds_cols])
 delta_bp <- bp_valid['sbp'] - pred_bp
 n.star <- dim(bp_valid)[1]
 MSPR <- sum((delta_bp_int)^2)/n.star
@@ -174,17 +190,17 @@ MSPR
 
 
 
-# PRESS Statistic for interaction model
+## PRESS Statistic for interaction model
 
 ```{r}
-PRESS(bp_reduced)
+PRESS(bp_reduced3)
 ```
 
 
 
 
 
-# Graphs of SBP and covariates
+## Graphs of SBP and covariates
 ```{r}
 bp_train  %>% dplyr::select(sbp, age, bmi, height, weight) %>% pivot_longer(c(age, bmi, height,weight), names_to = "xnames", values_to = "x")%>%
   ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
@@ -194,12 +210,12 @@ bp_train  %>% dplyr::select(sbp, alcohol, chldbear, educatn, exercise, gender, i
   ggplot(aes(x=x, y=(sbp)))  + geom_histogram() + facet_wrap(~xnames, scales = "free")
 ```
 
-# Influence Diagnostics
+## Influence Diagnostics
 
 ```{r}
-bp.rstandard <- rstandard(bp_reduced)
-bp.rstudent <- rstudent(bp_reduced)
-bp.inf <- influence.measures(bp_reduced)
+bp.rstandard <- rstandard(bp_reduced3)
+bp.rstudent <- rstudent(bp_reduced3)
+bp.inf <- influence.measures(bp_reduced3)
 cbind(bp.rstandard, bp.rstudent)
 ```
 - does not seem to have many issues here with outliers
@@ -213,17 +229,17 @@ bp.inf
 
 
 
-# Graphical Diagnostics for influence
+## Graphical Diagnostics for influence
 ```{r}
 #p1 <- ols_plot_added_variable(bp_reduced)
-p2 <- ols_plot_cooksd_chart(bp_reduced)
-p3 <- ols_plot_dffits(bp_reduced)
-p4 <- ols_plot_resid_lev(bp_reduced)
-p5 <- ols_plot_resid_stud_fit(bp_reduced)
-p6 <- ols_plot_dfbetas(bp_reduced)
+p2 <- ols_plot_cooksd_chart(bp_reduced3)
+p3 <- ols_plot_dffits(bp_reduced3)
+p4 <- ols_plot_resid_lev(bp_reduced3)
+p5 <- ols_plot_resid_stud_fit(bp_reduced3)
+p6 <- ols_plot_dfbetas(bp_reduced3)
 ```
 
-# Remedial Measures
+## Remedial Measures
 
 
 # Adding interaction terms 
@@ -240,6 +256,8 @@ summary(bp_full_int)
 - added interaction terms to see if $R^2$ goes up significantly or not.
 
 
+## Residual diagnostics of the interaction model
+
 ```{r}
 qqnorm(bp_full_int$residuals)
 qqline(bp_full_int$residuals)
@@ -248,11 +266,12 @@ hist(bp_full_int$residuals)
 ggplot(bp_full_int, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
 boxcox(bp_full_int)
 shapiro.test(bp_full_int$residuals)
+bptest(bp_full_int)
 ```
 - This model looks like it has residuals that are
 
 
-# AIC/BIC with interaction terms
+## AIC/BIC with interaction terms
 ```{r}
 stepAIC(bp_full_int, direction = "backward")
 #AIC=1934.13
@@ -266,7 +285,17 @@ bp_reduced_int <- lm(sbp ~ gender + smoke + exercise + age + weight + alcohol + 
     weight:stress + age:income + smoke:alcohol + exercise:salt, data=bp_train)
 summary(bp_reduced_int)
 ```
-# Multicollinearity
+
+## PRESS Statistic for interaction model
+
+```{r}
+PRESS(bp_reduced3)
+```
+
+
+
+
+## Multicollinearity
 VIF:
 ```{r}
 R_int <- summary(bp_full_int)$r.squared
@@ -281,7 +310,7 @@ anova(bp_reduced_int, bp_full_int)
 - With interaction terms model -- P-value > 0.05, reduced model is sufficient
 
 
-# Cross Validation for interaction model
+## Cross Validation for interaction model
 ```{r}
 # fit model for training set
 # gender + married + smoke + exercise + age + height + race + 
@@ -310,7 +339,7 @@ PRESS(lm_AIC_int)
 ```
 
 
-# Graphical Diagnostics 
+## Graphical Diagnostics 
 
 ```{r}
 p2_int <- ols_plot_cooksd_chart(bp_reduced)
@@ -321,7 +350,7 @@ p6_int <- ols_plot_dfbetas(bp_reduced)
 ```
 
 
-# Remedial measures
+## Remedial measures
 
 
 
