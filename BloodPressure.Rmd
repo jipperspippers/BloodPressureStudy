@@ -10,6 +10,7 @@ author: John Ma, Ben Mak, Micheal Chen
 # Packages
 ```{r, warning=FALSE, message=FALSE}
 library(tidyverse)
+library(broom)
 library(MASS)
 library(onewaytests)
 library(readxl)
@@ -48,22 +49,40 @@ bp_valid
 - set aside 60% observations to create the model and 40% to test the model
 
 
-# Relationships between covariates
+## Graphs of SBP and covariates
+```{r}
+bp_train  %>% dplyr::select(sbp, age, bmi, height, weight) %>% pivot_longer(c(age, bmi, height,weight), names_to = "xnames", values_to = "x")%>%
+  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
+
+
+bp_train  %>% dplyr::select(sbp, alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt) %>% pivot_longer(c(alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt), names_to = "xnames", values_to = "x") %>% 
+  ggplot(aes(x=x, y=(sbp)))  + geom_histogram() + facet_wrap(~xnames, scales = "free")
+```
+
+
+
+## Relationships between covariates
 ```{r}
 bp_cor <- cor(bp_train)
 
 corrplot(bp_cor)
 ```
-
+```{r}
+bp_cor()
+```
 # Multicollinearity
 
 
 VIF: 
 ```{r}
 R_sqr <- summary(bp_full)$r.squared
-VIF <- 1/(1-R_sqr)
+VIF <- 1/(1-0.894126091)
 VIF
 ```
+- 9.44 for chldbear and marriage
+- 
+
+
 # Main Effect Full Model
 
 ```{r}
@@ -78,7 +97,7 @@ summary(bp_full)
 ```{r}
 qqnorm(bp_full$residuals)
 qqline(bp_full$residuals)
-hist(x=bp_full$residuals, xlab='Residuals')
+hist(x=bp_full$residuals, main = paste("Density of ", "residuals") ,xlab='Residuals')
 #augment(bp_full)
 ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
 bc_full <- boxcox(bp_full)
@@ -98,12 +117,12 @@ lambda_full
 - bp test tells us that the variance of the error term is not constant 
 - looks like we can put a transformation on the model
 
-## Tranformed full model
+## Transformed full model
 ```{r}
 k2 <- prod(bp_train$sbp^(1/300))
 k1 <- 1/(lambda_full*k2^(lambda_full-1))
 bp_train %>% mutate(sbp_full_transformed = k1*(sbp^lambda_full - 1)) -> bp_train
-bp_train
+
 bp_full_transformed <- lm(data=bp_train, sbp_full_transformed ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
 summary(bp_full_transformed)
 ```
@@ -112,7 +131,7 @@ summary(bp_full_transformed)
 ```{r}
 qqnorm(bp_full_transformed$residuals)
 qqline(bp_full_transformed$residuals)
-hist(x=bp_full_transformed$residuals, xlab='Residuals')
+hist(x=bp_full_transformed$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed full model"))
 #augment(bp_full)
 ggplot(bp_full_transformed, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
 bc_full <- boxcox(bp_full_transformed)
@@ -125,122 +144,281 @@ bptest(bp_full_transformed, studentize = F)
 
 
 
-
-
-
 ## Backwards elimination
 
 
 ## AIC/BIC 
 ```{r}
-stepAIC(bp_full, direction = "backward")
+stepAIC(bp_full_transformed, direction = "backward")
 ```
 ```{r}
-#AIC=1942.39
-bp_reduced <- lm(sbp ~ gender + smoke + exercise + height + alcohol + trt + bmi + 
-    chldbear, data=bp_train)
+#AIC=1938.49
+bp_reduced <- lm(sbp_full_transformed ~ gender + smoke + exercise + height + overwt + 
+    alcohol + trt + chldbear, data=bp_train)
 summary(bp_reduced)
 ```
-- since gender has a large p value and in
-
+- we know that gender and chldbear are strongly correlated, thus, it would be good to remove them
 
  
 ```{r}
-bp_reduced2 <-  lm(sbp ~ chldbear + smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
+bp_reduced2 <-  lm(sbp_full_transformed ~ chldbear + smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
 summary(bp_reduced2)
 ```
 We drop gender, and see that the chldbear p-value > 0.929 therefore, we remove it.
 
 
+
 ```{r}
-bp_reduced3 <-  lm(sbp ~ smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
+bp_reduced3 <-  lm(sbp_full_transformed ~ smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
 summary(bp_reduced3)
 stepAIC(bp_reduced3)
 ```
-- Everything looks significant here.
-- AIC = 1940.93
-
-
 Checking if removing the terms is better using ANOVA: 
 ```{r}
-anova(bp_reduced3, bp_full)
+anova(bp_reduced3, bp_full_transformed)
 ```
 
 - $H_0:$ full model and reduced model give similar effects vs. $H_a:$ full model is better.
 - Without interaction terms model -- P-value > 0.05, reduced model is sufficient
 
+## Residual Diagnostics for Reduced model
+```{r}
+qqnorm(bp_reduced3$residuals)
+qqline(bp_reduced3$residuals)
+hist(x=bp_reduced3$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed reduced model"))
+#augment(bp_full)
+ggplot(bp_reduced3, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+bc_reduced <- boxcox(bp_reduced3)
+shapiro.test(bp_reduced3$residuals)
+bptest(bp_reduced3, studentize = F)
+```
 
+- bp test, p-value < 0.05 => error constancy.
+
+## Residual diganostics for Transformed reduced model
+```{r}
+lambda_reduced <- bc_reduced$x[which.max(bc_reduced$y)]
+lambda_reduced
+```
+
+## Transformed reduced model
+```{r}
+
+k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
+bp_train %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_train
+
+bp_reduced_t <- lm(data=bp_train, sbp_reduced_t~smoke + exercise + height + alcohol + trt + bmi)
+summary(bp_reduced_t)
+
+bptest(bp_reduced_t)
+```
+
+## Residual diagnosis for transformed reduced  model
+```{r}
+qqnorm(bp_reduced_t$residuals)
+qqline(bp_reduced_t$residuals)
+hist(x=bp_reduced_t$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed full model"))
+#augment(bp_full)
+ggplot(bp_reduced_t, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+bc_reduced2 <- boxcox(bp_reduced_t)
+shapiro.test(bp_reduced_t$residuals)
+bptest(bp_reduced_t, studentize = F)
+```
+```{r}
+bp_train %>% mutate(resid = rstandard(bp_reduced_t)) -> bp_train
+
+bp_train  %>% dplyr::select(c(resid, smoke , exercise , height , alcohol , trt , bmi)) %>% 
+  pivot_longer(c (smoke , exercise , height , alcohol , trt , bmi), names_to = "xnames", values_to = "x") %>%
+  ggplot(aes(x=x, y=resid))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm", se=F)
+```
+# Case 3
+```{r}
+bp_train %>% mutate(s.hat = abs(bp_reduced_t$residuals)) -> bp_train
+fit = lm(s.hat~ smoke + exercise + height + alcohol + 
+    trt + bmi, data=bp_train)
+var.s1 = predict(fit)^2
+mod1 <- lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s1)
+
+
+y.hat <- predict(bp_reduced_t); e.1  <- resid(bp_reduced_t)
+
+mod2 <- lm(abs(e.1)~y.hat)
+
+var.s = (mod2$fitted.values)^2
+mod3 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s)
+
+
+
+e.2 = mod3$residuals
+yhat.2 = predict(mod3)
+mod4 = lm(abs(e.2)~yhat.2)
+var.s2 = (mod4$fitted.values)^2
+mod5 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s2)
+
+
+e.3 = mod5$residuals
+yhat.3 = predict(mod5)
+mod6 = lm(abs(e.3)~yhat.3)
+var.s3 = (mod6$fitted.values)^2
+mod7 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s3)
+
+e.4 = mod7$residuals
+yhat.4 = predict(mod7)
+mod8 = lm(abs(e.4)~yhat.4)
+var.s4 = (mod8$fitted.values)^2
+mod9 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s4)
+
+e.5 = mod9$residuals
+yhat.5 = predict(mod9)
+mod10 = lm(abs(e.5)~yhat.5)
+var.s5 = (mod10$fitted.values)^2
+mod11 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s5)
+
+
+e.6 = mod11$residuals
+yhat.6 = predict(mod11)
+mod12 = lm(abs(e.6)~yhat.6)
+var.s6 = (mod12$fitted.values)^2
+mod13 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s6)
+
+cbind(coefficients(fit),coefficients(mod3),coefficients(mod5), coefficients(mod7),coefficients(mod9),coefficients(mod11), coefficients(mod13))
+bptest(mod9)
+```
+
+```{r}
+e.7 = mod13$residuals
+yhat.7 = predict(mod13)
+mod14 = lm(abs(e.7)~yhat.7)
+var.s7 = (mod14$fitted.values)^2
+mod15 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s7)
+
+e.8= mod13$residuals
+yhat.8 = predict(mod15)
+mod16 = lm(abs(e.8)~yhat.8)
+var.s8 = (mod16$fitted.values)^2
+mod17 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
+    trt + bmi, data = bp_train, weight=1/var.s8)
+
+cbind(coefficients(bp_reduced_t),coefficients(mod1),coefficients(mod3),coefficients(mod5), coefficients(mod7),coefficients(mod9))
+```
+
+```{r}
+summary(mod9)
+```
+
+
+```{r}
+bp_reduced_t2 <- lm(sbp_reduced_t ~ smoke + exercise + height + alcohol  + bmi, data = bp_train)
+
+bptest(bp_reduced_t2, studentize = F)
+anova(bp_reduced_t, bp_reduced_t2)
+```
+
+
+## Influence Diagnostics
+
+
+## Graphical Diagnostics for influence
+```{r}
+#p1 <- ols_plot_added_variable(bp_reduced)
+p2 <- ols_plot_cooksd_chart(mod7)
+p3 <- ols_plot_dffits(mod7)
+p4 <- ols_plot_resid_lev(mod7)
+p5 <- ols_plot_resid_stud_fit(mod7)
+ols_plot_dfbetas(mod7)
+```
+## Removing outliers
+```{r}
+#83, 155 , 293, 135, 261, 300, 35, 25, 256, 201, 292, 242, 263
+
+t = rstudent(bp_reduced3)
+#round(t,2)
+n = 300
+p.prime = 7
+alpha = 0.05
+t.crit = qt(1-alpha/(2*n), n - p.prime -1)
+which(abs(t) > t.crit)
+bp_train %>% filter(!row_number() %in% c(263) )  -> outliers_rm
+bp_reduced4 <- lm(sbp_full_transformed~smoke + exercise + height + alcohol + trt + bmi, data=outliers_rm)
+```
+
+
+```{r}
+hii = hatvalues(bp_reduced_t)
+which(hii > 2*7/300)
+```
+
+
+```{r}
+p7 <- ols_plot_cooksd_chart(bp_reduced4)
+p8 <- ols_plot_dffits(bp_reduced4)
+p9 <- ols_plot_resid_lev(bp_reduced4)
+p10 <- ols_plot_resid_stud_fit(bp_reduced4)
+bptest(bp_reduced4)
+```
 
 ## Cross validation for main effect model
 
 ```{r}
 
 #preds_cols <- c('gender' , 'married' , 'smoke' , 'exercise' , 'age' , 'weight' , 'height' , 'overwt' , 'race' , 'alcohol' , 'trt' ,'bmi' ,'stress' , 'salt' , 'chldbear' , 'income' , 'educatn')
-
+anova(mod9)
+summary(mod9)
+k2 <- prod(bp_valid$sbp^(1/200))
+k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
+bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
+bp_valid
 preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
-pred_bp <- predict(bp_reduced3, bp_valid[preds_cols])
-delta_bp <- bp_valid['sbp'] - pred_bp
+pred_bp <- predict(mod9, bp_valid[preds_cols])
+delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
 n.star <- dim(bp_valid)[1]
-MSPR <- sum((delta_bp_int)^2)/n.star
+MSPR <- sum((delta_bp)^2)/200
 MSPR
 ```
 
-- MSPR = 666.486
-- MSE = 629.6
+- MSPR = 731.854
+- MSE = 1.666
 
 
-
-## PRESS Statistic for interaction model
+however,
 
 ```{r}
-PRESS(bp_reduced3)
+anova(bp_reduced_t)
+
+k2 <- prod(bp_valid$sbp^(1/200))
+k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
+bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
+preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
+pred_bp <- predict(bp_reduced_t, bp_valid[preds_cols])
+delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
+n.star <- dim(bp_valid)[1]
+MSPR <- sum((delta_bp)^2)/n.star
+MSPR
 ```
 
 
 
 
 
-## Graphs of SBP and covariates
-```{r}
-bp_train  %>% dplyr::select(sbp, age, bmi, height, weight) %>% pivot_longer(c(age, bmi, height,weight), names_to = "xnames", values_to = "x")%>%
-  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
-
-
-bp_train  %>% dplyr::select(sbp, alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt) %>% pivot_longer(c(alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt), names_to = "xnames", values_to = "x") %>% 
-  ggplot(aes(x=x, y=(sbp)))  + geom_histogram() + facet_wrap(~xnames, scales = "free")
-```
-
-## Influence Diagnostics
-
-```{r}
-bp.rstandard <- rstandard(bp_reduced3)
-bp.rstudent <- rstudent(bp_reduced3)
-bp.inf <- influence.measures(bp_reduced3)
-cbind(bp.rstandard, bp.rstudent)
-```
-- does not seem to have many issues here with outliers
-
-
-
-```{r}
-bp.inf
-```
 
 
 
 
-## Graphical Diagnostics for influence
-```{r}
-#p1 <- ols_plot_added_variable(bp_reduced)
-p2 <- ols_plot_cooksd_chart(bp_reduced3)
-p3 <- ols_plot_dffits(bp_reduced3)
-p4 <- ols_plot_resid_lev(bp_reduced3)
-p5 <- ols_plot_resid_stud_fit(bp_reduced3)
-p6 <- ols_plot_dfbetas(bp_reduced3)
-```
 
-## Remedial Measures
 
+
+
+#    -
+# -
+# -
 
 # Adding interaction terms 
 
@@ -323,8 +501,8 @@ anova(bp_reduced_int)
 
 pred_cols_int <- c('gender', 'married', 'smoke', 'exercise', 'age', 'height', 'race', 'alcohol' , 'trt', 'bmi', 'stress', 'chldbear', 'income', 'educatn', 'overwt', 'income:educatn', 'trt:overwt', 'smoke:exercise', 'alcohol:educatn')
 
-pred_bp_int <- predict(lm_AIC_int, bp_valid_int[pred_cols_int])
-delta_bp_int <- bp_valid['sbp'] - pred_bp_int
+pred_bp_int <- predict(bp_reduced_int, bp_valid_int[pred_cols_int])
+delta_bp_int <- bp_valid_int['sbp'] - pred_bp_int
 n.star_int <- dim(bp_valid_int)[1]
 MSPR_int <- sum((delta_bp_int)^2)/n.star_int 
 MSPR_int
@@ -348,6 +526,9 @@ p4_int <- ols_plot_resid_lev(bp_reduced)
 p5_int <- ols_plot_resid_stud_fit(bp_reduced)
 p6_int <- ols_plot_dfbetas(bp_reduced)
 ```
+- We have a couple of outliers, however majority of these values are within
+the threshold 
+- observation 263 gives us the highest influence, it is an outlier
 
 
 ## Remedial measures
