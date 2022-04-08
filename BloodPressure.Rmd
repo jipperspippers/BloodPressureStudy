@@ -1,7 +1,7 @@
 ---
 title: "Blood Pressure"
 output: html_notebook
-author: John Ma,
+author: John Ma, Ben Mak, Micheal Chen
 ---
 
 
@@ -18,6 +18,7 @@ library(corrplot)
 library(MPV)
 library(olsrr)
 library(ggpubr)
+library(lmtest)
 ```
 
 # Reading and cleaning the data frame
@@ -47,7 +48,22 @@ bp_valid
 - set aside 60% observations to create the model and 40% to test the model
 
 
+# Relationships between covariates
+```{r}
+bp_cor <- cor(bp_train)
 
+corrplot(bp_cor)
+```
+
+# Multicollinearity
+
+
+VIF: 
+```{r}
+R_sqr <- summary(bp_full)$r.squared
+VIF <- 1/(1-R_sqr)
+VIF
+```
 # Main Effect Full Model
 
 ```{r}
@@ -62,48 +78,52 @@ summary(bp_full)
 ```{r}
 qqnorm(bp_full$residuals)
 qqline(bp_full$residuals)
-hist(bp_full$residuals)
+hist(x=bp_full$residuals, xlab='Residuals')
 #augment(bp_full)
-ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
-boxcox(bp_full)
+ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+bc_full <- boxcox(bp_full)
 shapiro.test(bp_full$residuals)
+bptest(bp_full, studentize = F)
 # add bf test here; didnt work earlier
+lambda_full <- bc_full$x[which.max(bc_full$y)]
+lambda_full
 ```
 
 - fitted vs residual values look randomly scattered
-- normal qq plot looks like its in a stright line
+- normal qq plot looks like its in a straight line
 - data seems to be cleaned up here.
-
-
-Tests:  
-```{r}
-shapiro.test(bp_full$residuals)
-#bf.test(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
-```
 
 - p-value > 0.05, we can conclude the error looks from a normal population
 
+- looks like we can put a transformation on the model
 
-# Checks for multicollinearity
+# Tranformed full model
 ```{r}
-bp_cor <- cor(bp_train)
-
-corrplot(bp_cor)
+k2 <- prod(bp_train$sbp^(1/300))
+k1 <- 1/(lambda_full*k2^(lambda_full-1))
+bp_train %>% mutate(sbp_full_transformed = k1*(sbp^lambda_full - 1)) -> bp_train
+bp_train
+bp_full_transformed <- lm(data=bp_train, sbp_full_transformed ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
+summary(bp_full_transformed)
 ```
 
-# Multicollinearity
-- Estimated regression coefficients with an opposite sign of that expected from theoretical considerations or prio e
-- Standard error is not large -- not a sign 
-- High correlation between predictor variables overwt, weight, height and BMI -- related because ... (source)
-- high correlation between chldbear and gender -- makes sense because only women can bear children.
-- add interaction terms 
-
-VIF: 
+# Residual testing again
 ```{r}
-R_sqr <- summary(bp_full)$r.squared
-VIF <- 1/(1-R_sqr)
-VIF
+qqnorm(bp_full_transformed$residuals)
+qqline(bp_full_transformed$residuals)
+hist(x=bp_full_transformed$residuals, xlab='Residuals')
+#augment(bp_full)
+ggplot(bp_full_transformed, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+bc_full <- boxcox(bp_full_transformed)
+shapiro.test(bp_full_transformed$residuals)
+bptest(bp_full_transformed, studentize = F)
+
 ```
+
+
+
+
+
 
 
 
@@ -120,6 +140,8 @@ bp_reduced <- lm(sbp ~ gender + smoke + exercise + height + alcohol + trt + bmi 
     chldbear, data=bp_train)
 summary(bp_reduced)
 ```
+- since chldbear has a large 
+
 
 Checking if removing the terms is better using ANOVA:  
 ```{r}
@@ -164,8 +186,12 @@ PRESS(bp_reduced)
 
 # Graphs of SBP and covariates
 ```{r}
-bp_train  %>% pivot_longer(c(gender:educatn), names_to = "xnames", values_to = "x")%>% 
+bp_train  %>% dplyr::select(sbp, age, bmi, height, weight) %>% pivot_longer(c(age, bmi, height,weight), names_to = "xnames", values_to = "x")%>%
   ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
+
+
+bp_train  %>% dplyr::select(sbp, alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt) %>% pivot_longer(c(alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt), names_to = "xnames", values_to = "x") %>% 
+  ggplot(aes(x=x, y=(sbp)))  + geom_histogram() + facet_wrap(~xnames, scales = "free")
 ```
 
 # Influence Diagnostics
