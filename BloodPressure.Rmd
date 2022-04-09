@@ -5,21 +5,10 @@ author: John Ma, Ben Mak, Micheal Chen
 ---
 
 
-
-
 # Packages
 ```{r, warning=FALSE, message=FALSE}
-library(tidyverse)
-library(broom)
-library(MASS)
-library(onewaytests)
-library(readxl)
-library(leaps)
-library(corrplot)
-library(MPV)
-library(olsrr)
-library(ggpubr)
-library(lmtest)
+library(tidyverse);library(broom);library(MASS);library(onewaytests);library(readxl);library(leaps)
+library(corrplot);library(MPV);library(olsrr);library(ggpubr);library(lmtest);library(car)
 ```
 
 # Reading and cleaning the data frame
@@ -46,8 +35,7 @@ bp_train
 bp_valid
 
 ```
-- set aside 60% observations to create the model and 40% to test the model
-
+Cleaning the data means that we had to convert some values into numbers for it to work. The data for married status had to be converted into 0 for not married and 1 for married. For gender status, 0 for Female, and 1 for Male. Also, for the smoke column, Y is 1 and 0 is No, similarly to the married data. Data of the columns had to be changed to a double value to work with.
 
 ## Graphs of SBP and covariates
 ```{r}
@@ -73,13 +61,8 @@ bp_cor()
 # Multicollinearity
 
 
-VIF: 
-```{r}
-R_sqr <- summary(bp_full)$r.squared
-VIF <- 1/(1-0.894126091)
-VIF
-```
-- 9.44 for chldbear and marriage
+
+- 9.44 for chldbear and marriage is pretty high.
 - 
 
 
@@ -89,8 +72,12 @@ VIF
 bp_full <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
 summary(bp_full)
 ```
-- p-value is < 0.05, which means that
+```{r}
+vif(bp_full)
+```
 
+- Looks like ther is a multicollinearity problem with weight, height, and BMI.
+- gender and chldbear seems to have a VIF about 5~ and could pose as a problem.
 
 
 ## Residual diagnostics of the main effect model
@@ -108,14 +95,8 @@ lambda_full <- bc_full$x[which.max(bc_full$y)]
 lambda_full
 ```
 
-- fitted vs residual values look randomly scattered
-- normal qq plot looks like its in a straight line
-- data seems to be cleaned up here.
+The residuals values of  look normally distributed. 
 
-- p-value > 0.05, we can conclude the error looks from a normal population
-
-- bp test tells us that the variance of the error term is not constant 
-- looks like we can put a transformation on the model
 
 ## Transformed full model
 ```{r}
@@ -375,13 +356,15 @@ summary(mod9)
 k2 <- prod(bp_valid$sbp^(1/200))
 k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
 bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
-bp_valid
+#bp_valid
 preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
 pred_bp <- predict(mod9, bp_valid[preds_cols])
 delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
 n.star <- dim(bp_valid)[1]
 MSPR <- sum((delta_bp)^2)/200
 MSPR
+MSE <- sum(mod9$residuals^2)/200
+MSE
 ```
 
 - MSPR = 731.854
@@ -402,17 +385,44 @@ delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
 n.star <- dim(bp_valid)[1]
 MSPR <- sum((delta_bp)^2)/n.star
 MSPR
+MSE <- sum(bp_reduced_t$residuals^2)/300
+MSE
 ```
 
 
 
+```{r}
+stepAIC(mod9, direction="backward")
+```
+
+```{r}
+stepAIC(bp_reduced_t, direction="backward")
+```
 
 
 
+```{r}
+anova(bp_full_transformed)
+
+k2 <- prod(bp_valid$sbp^(1/200))
+k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
+bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
+preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
+pred_bp <- predict(bp_full_transformed, bp_valid[preds_cols])
+delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
+n.star <- dim(bp_valid)[1]
+MSPR <- sum((delta_bp)^2)/n.star
+MSPR
+MSE <- sum(bp_full_transformed$residuals^2)/300
+MSE
+```
 
 
 
-
+```{r}
+PRESS(bp_reduced_t)
+PRESS(mod9)
+```
 
 
 
