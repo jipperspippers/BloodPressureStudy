@@ -1,18 +1,31 @@
 ---
 title: "Blood Pressure"
-output: html_notebook
-author: John Ma, Ben Mak, Micheal Chen
+author: "John Ma, Ben Mak, Micheal Chen"
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 
-# Packages
-```{r, warning=FALSE, message=FALSE}
-library(tidyverse);library(broom);library(MASS);library(onewaytests);library(readxl);library(leaps)
-library(corrplot);library(MPV);library(olsrr);library(ggpubr);library(lmtest);library(car)
-```
 
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Packages
+library(tidyverse);library(broom);library(MASS);library(onewaytests);library(readxl);library(leaps)
+library(corrplot);library(MPV);library(olsrr);library(ggpubr);library(lmtest);library(car);library(tinytex)
+```
+# Introduction
+
+ Studies have shown that SBP is an important marker in the risk of all-cause mortality and chronic diseases, some of which include heart attacks, strokes, and diabetes. When reading blood pressure with a machine, there are two readings. One which is the higher number which is the SBP and diastolic pressure is the lower number. SBP measures the force of blood being pushed around the body when your heart contracts. (surname, data)  In this analysis, the objective is to determine which factors have an impact on systolic blood pressure (SBP) and to create a model to predict the systolic blood pressure for a person. The analysis uses the process described in the textbook Applied Linear Regression Models, on page 344.
+  
+The continuous covariates in the data set are age, bmi, height, and weight. BMI is dependent on height and weight as BMI is calculated as weight/height2. Height is in centimeters, age is in years, weight is in kilograms. The categorical variables are alcohol usage as alcohol, childbearing potential as chldbear, education level as educatn, exercise level as exercise, gender, income level as income, marital status as married, overweight status as overwt, race, salt level as salt, if someone is a smoker as smoke, stress level as stress and hypertension treatment as trt. Alcohol usage, childbearing potential
+
+
+The data has been cleaned to change some categorical variables into numerical variables. The data for married status had to be converted into 0 for not married and 1 for married. Similarly, for the smoke column, Y is 1 and 0 is No,. Data type of the columns had to be changed from char to double value to work with. Also, for gender status, 0 for Female, and 1 for Male.
+
+
+
+```{r, echo=FALSE}
 # Reading and cleaning the data frame
-```{r}
 bp <- read_xlsx("BloodPressure.xlsx")
 bp %>% mutate(married = replace(married, married == 'N', 0))%>% 
   mutate(married = replace(married, married == 'Y', 1)) %>%
@@ -24,534 +37,392 @@ bp %>% mutate(married = replace(married, married == 'N', 0))%>%
 class(bp$gender) = "double"
 class(bp$married) = "double"
 class(bp$smoke) = "double"
-bp
 # Making a testing set and a validation set
 set.seed(1004274037)
 bp_samp <- sample(1:500, 300, replace=FALSE)
 bp_train <- bp[bp_samp,]
 bp_valid <- bp[-bp_samp,]
-
-bp_train
-bp_valid
-
 ```
-Cleaning the data means that we had to convert some values into numbers for it to work. The data for married status had to be converted into 0 for not married and 1 for married. For gender status, 0 for Female, and 1 for Male. Also, for the smoke column, Y is 1 and 0 is No, similarly to the married data. Data of the columns had to be changed to a double value to work with.
 
-## Graphs of SBP and covariates
-```{r}
+### Graphs of SBP and covariates
+```{r, fig.width=15, fig.height=6, echo=FALSE, message=FALSE}
 bp_train  %>% dplyr::select(sbp, age, bmi, height, weight) %>% pivot_longer(c(age, bmi, height,weight), names_to = "xnames", values_to = "x")%>%
-  ggplot(aes(x=x, y=(sbp)))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm")
+  ggplot(aes(x=x, y=(sbp))) + labs(title="Figure 1. Continuous variables vs SBP") + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm", se=F) -> fig1
 
 
 bp_train  %>% dplyr::select(sbp, alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt) %>% pivot_longer(c(alcohol, chldbear, educatn, exercise, gender, income, married, overwt, race, salt, smoke, stress, trt), names_to = "xnames", values_to = "x") %>% 
-  ggplot(aes(x=x, y=(sbp)))  + geom_histogram() + facet_wrap(~xnames, scales = "free")
+  ggplot(aes(x=factor(x), y=sbp))+ xlab("Categorical level") + labs(title="Figure 2. Categorical variables vs SBP") + geom_boxplot() + facet_wrap(~xnames, scales = "free") -> fig2
+
+ggarrange(fig1,fig2)
 ```
 
+To analyze the correlation between all variables with Systolic Blood pressure, we constructed separate scatter plots and their fitted lines for the continuous predictors and box plots for the categorical. 
+For the continuous set (Figure 1.), we noticed that for the fitted line, there is a positive correlation with SBP, for Weight and BMI and a negative correlation for height. For each fitted model, we also noticed that the data for each correlation was randomly and symmetrically distributed along each regression line. This indicates that by model assumptions, that the data is selected from a normally distributed sample. 
+For the box plots, we noticed that there are some box plots that have noticeable change in mean and median values. For each categorical level, there is an increase in sbp for overweight level and smoking while there is a decrease in level of exercise. Smoking causes blood vessels to clot, which increases heartbeats per second. Exercising strengthens the heart, which results in it pumping blood with less effort.
 
 
 ## Relationships between covariates
-```{r}
+```{r, fig.height=5, echo=FALSE}
 bp_cor <- cor(bp_train)
 
-corrplot(bp_cor)
+corrplot(bp_cor,title="Figure 3. Correlation matrix plot",mar=c(0,0,2,0),
+         diag=TRUE)
 ```
-```{r}
-bp_cor()
-```
-# Multicollinearity
-
-
-
-- 9.44 for chldbear and marriage is pretty high.
-- 
-
+Using Figure 3, it is seen that the covariates that have the strongest relationship with SBP are smoke, exercise, weight, height, overweight, alcohol, TRT, and BMI. The other covariates do not seem to have that strong of a relationship with SBP.  BMI is strongly correlated with height, weight and overweight which raises a multicollinearity problem if it were to be added to the model
 
 # Main Effect Full Model
 
-```{r}
+```{r,echo=FALSE}
 bp_full <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
-summary(bp_full)
-```
-```{r}
 vif(bp_full)
 ```
 
-- Looks like ther is a multicollinearity problem with weight, height, and BMI.
-- gender and chldbear seems to have a VIF about 5~ and could pose as a problem.
+## Variance Inflation Factor
+Looks like there is a multicollinearity problem with weight, height, and BMI. Gender and chldbear seems to have a VIF about 5~ and could pose as a problem. Removing BMI could be beneficial to get a more accurate model. In addition, BMI = $weight/height^2$, and that a higher BMI depending on the gender, determines if a person is overweight or not. The data seems like it is using BMI to determine someone is overweight or not.
+
+
+```{r, echo=FALSE, results='hide'}
+# remove BMI
+bp_full2 <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt  + stress + salt + chldbear + income + educatn)
+summary(bp_full2)
+anova(bp_full2, bp_full)
+```
+Doing the ANOVA test, shows that reduced model has the same effect as the full model as the p-value > 0.05. Thus we can continue to do some of the residual diagnostics with this model.
+
+```{r, echo=FALSE}
+vif(bp_full2)
+```
+
+As we can see, there are no VIF values greater than 10 anymore. There is no indication of serious multicollinearity anymore.
+
+This model with coefficients in Figure 4. includes all predictors, excluding BMI. Since BMI could cause a multicollinearity issue, it was removed. The model here is significant with p-value < 0.05. Meaning that not all values of the coefficients are 0. The coefficients for trt, smoke, exercise and alcohol seems to be significant factors for the model with p-values < 0.05. The intercept standard is quite high as well, at 58.8365, in comparison to the intercept itself at 69.08773. 
+Using the F-test to compare the model with BMI and without BMI, it results in a p-value of 0.7715.  Which means that BMI does not make a significant impact on the model predicting SBP.
 
 
 ## Residual diagnostics of the main effect model
-```{r}
-qqnorm(bp_full$residuals)
-qqline(bp_full$residuals)
-hist(x=bp_full$residuals, main = paste("Density of ", "residuals") ,xlab='Residuals')
-#augment(bp_full)
-ggplot(bp_full, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
-bc_full <- boxcox(bp_full)
-shapiro.test(bp_full$residuals)
-bptest(bp_full, studentize = F)
+```{r, echo=FALSE}
+augment(data=bp_train, x=bp_full2) -> bp_train.a
+g1 <- ggplot(bp_train.a, aes(sample=.resid)) +stat_qq() + stat_qq_line() + labs(title = "Figure 5. Normal Q-Q Plot ")
+g2 <- ggplot(bp_train.a, aes(x= .resid)) + geom_histogram(bins=10) + labs(title = "Figure 6. Frequency of Residuals", x="Residual") 
+g3 <- ggplot(bp_train.a, aes(x=.fitted, y=.resid)) + geom_point() + labs(title = "Figure 7. Fitted vs. Residuals", x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+
 # add bf test here; didnt work earlier
-lambda_full <- bc_full$x[which.max(bc_full$y)]
-lambda_full
+ggarrange(g1,g2,g3) -> plots
+annotate_figure(plots, top = text_grob("Plots for the residual values for the full model", color = "red", face = "bold", size = 14))
 ```
 
-The residuals values of  look normally distributed. 
+The residuals values of this model look normally distributed in reference to Figure 5. and Figure 6.. The Shapiro-Wilk test gives a P-Value of 0.5881, therefore failing to reject the null hypothesis of normality.  However, there is a concern with the variance of the residuals, which they are not constant. There seems to be some resemblance of a trumpet shape for figure 7. with the points, which puts the constant variance of the error terms into question. To diagnose this, the Breusch-Pagan test, gives a P-value of 0.01755 therefore rejecting the null hypothesis that the variance of the residual is constant.  As a remedial measure, a box cox transformation is done below. 
 
+```{r, results='hide'}
+shapiro.test(bp_full2$residuals)
+bptest(bp_full2, studentize = F) 
+```
 
 ## Transformed full model
-```{r}
+```{r,echo=FALSE}
+bc_full2 <- boxCox(bp_full2, main="Figure 8. Box cox for the full model")
+```
+
+
+
+```{r, echo=FALSE, results='hide'}
+lambda_full <- bc_full2$x[which.max(bc_full2$y)]
+lambda_full
 k2 <- prod(bp_train$sbp^(1/300))
 k1 <- 1/(lambda_full*k2^(lambda_full-1))
 bp_train %>% mutate(sbp_full_transformed = k1*(sbp^lambda_full - 1)) -> bp_train
-
-bp_full_transformed <- lm(data=bp_train, sbp_full_transformed ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
+bp_full_transformed <- lm(data=bp_train, sbp_full_transformed ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt  + stress + salt + chldbear + income + educatn)
 summary(bp_full_transformed)
 ```
+Using a box-cox transformation, let $\lambda$ = 0.5454545 onto SBP values.
 
-## Residual testing again
-```{r}
-qqnorm(bp_full_transformed$residuals)
-qqline(bp_full_transformed$residuals)
-hist(x=bp_full_transformed$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed full model"))
-#augment(bp_full)
-ggplot(bp_full_transformed, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
-bc_full <- boxcox(bp_full_transformed)
-shapiro.test(bp_full_transformed$residuals)
-bptest(bp_full_transformed, studentize = F)
 
+## Residual Diagnosis for the Transformed model
+```{r, echo=FALSE}
+augment(data=bp_train, x=bp_full_transformed) -> bp_train.2
+g1 <- ggplot(bp_train.2, aes(sample=.resid)) +stat_qq() + stat_qq_line() + labs(title = "Figure 9. Normal Q-Q Plot ")
+g2 <- ggplot(bp_train.2, aes(x= .resid)) + geom_histogram(bins=10) + labs(title = "Figure 10. Frequency of Residuals")
+g3 <- ggplot(bp_train.2, aes(x=.fitted, y=.resid)) + geom_point() + labs(title = "Figure 11. Residuals vs. Fitted",x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+# add bf test here; didnt work earlier
+plots <- ggarrange(g1,g2,g3)
+annotate_figure(plots, top = text_grob("Plots for the residual values for the model transformed full model ", color = "red", face = "bold", size = 14))
 ```
 
+```{r, echo=FALSE,results='hide'}
+shapiro.test(bp_full_transformed$residuals)
+bptest(bp_full_transformed, studentize = F) 
+```
 
-
+Visually, using Figure 9, and Figure 10, it shows that the residuals are likely from a normally distributed sample. Verifying speculations of the normality of the error terms, Shapiro-Wilk test gives a p-value of 0.4015 therefore failing to reject the null hypothesis where the residuals are not from a normally distributed sample with a significance level of 0.05. Providing strong evidence that the residuals are from a normally distributed sample.  Although figure 11. shows that the variance of the error terms may not look constant with the resemblance of a trumpet shape with the plots the Breusch-Pagan test, gives us a p-value of 0.06193. Thus, failing to reject the null hypothesis that the variance of the error terms are constant with a significance level of 0.05 providing evidence that the residuals have constant variance.
 
 
 ## Backwards elimination
 
-
 ## AIC/BIC 
-```{r}
+```{r,echo=FALSE,results='hide'}
 stepAIC(bp_full_transformed, direction = "backward")
 ```
-```{r}
-#AIC=1938.49
-bp_reduced <- lm(sbp_full_transformed ~ gender + smoke + exercise + height + overwt + 
-    alcohol + trt + chldbear, data=bp_train)
-summary(bp_reduced)
-```
-- we know that gender and chldbear are strongly correlated, thus, it would be good to remove them
+
 
  
-```{r}
-bp_reduced2 <-  lm(sbp_full_transformed ~ chldbear + smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
-summary(bp_reduced2)
-```
-We drop gender, and see that the chldbear p-value > 0.929 therefore, we remove it.
-
-
-
-```{r}
-bp_reduced3 <-  lm(sbp_full_transformed ~ smoke + exercise + height + alcohol + trt + bmi , data=bp_train)
-summary(bp_reduced3)
-stepAIC(bp_reduced3)
-```
-Checking if removing the terms is better using ANOVA: 
-```{r}
-anova(bp_reduced3, bp_full_transformed)
+```{r,echo=FALSE,results='hide'}
+bp_reduced <- lm(sbp_full_transformed ~ gender + smoke + exercise + weight + alcohol + 
+    trt + chldbear, data=bp_train)
+summary(bp_reduced)
 ```
 
-- $H_0:$ full model and reduced model give similar effects vs. $H_a:$ full model is better.
-- Without interaction terms model -- P-value > 0.05, reduced model is sufficient
+```{r,echo=FALSE,results='hide'}
+anova(bp_reduced, bp_full_transformed)
+```
+
+Using backwards elimination as described in the lecture with significance level of  =0.20, (through the function stepAIC() in R) for the procedure, gives us a new model dropping married, age, height, overwt, race, stress, salt ,income, educatn. The AIC for the new model is 1936.76, in comparison to 1950.57 for the full model. Using the F-test  to compare both models, with a p-value of 0.9117, which results in a failure to reject the null hypothesis that the reduced model and full model have the same effect.  In other words, the reduced model is as effective as the full model.
 
 ## Residual Diagnostics for Reduced model
-```{r}
-qqnorm(bp_reduced3$residuals)
-qqline(bp_reduced3$residuals)
-hist(x=bp_reduced3$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed reduced model"))
-#augment(bp_full)
-ggplot(bp_reduced3, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
-bc_reduced <- boxcox(bp_reduced3)
-shapiro.test(bp_reduced3$residuals)
-bptest(bp_reduced3, studentize = F)
+```{r, echo=FALSE}
+augment(data=bp_train, x=bp_reduced) -> bp_train.2
+g1 <- ggplot(bp_train.2, aes(sample=.resid)) +stat_qq() + stat_qq_line() + labs(title = "Figure 12. Normal Q-Q Plot ")
+g2 <- ggplot(bp_train.2, aes(x= .resid)) + geom_histogram(bins=10) + labs(title = "Figure 13. Frequency of Residuals")
+g3 <- ggplot(bp_train.2, aes(x=.fitted, y=.resid)) + geom_point() + labs(title = "Figure 14. Residuals vs. Fitted",x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+
+# add bf test here; didnt work earlier
+plots <- ggarrange(g1,g2,g3)
+annotate_figure(plots, top = text_grob("Plots for the residual values for the reduced model", color = "red", face = "bold", size = 14))
+```
+```{r,echo=FALSE,results='hide'}
+shapiro.test(bp_reduced$residuals)
+bptest(bp_reduced, studentize = F) 
 ```
 
-- bp test, p-value < 0.05 => error constancy.
+The residuals values of this model look normally distributed in reference to Figure 12. and Figure 13.. The Shapiro-Wilk test gives a P-Value of 0.5881, therefore failing to reject the null hypothesis of normality.  However, there is a concern with the variance of the residuals, which are not constant. There seems to be some resemblance of a trumpet shape for figure 7. with the points, which puts the constant variance of the error terms into question. To diagnose this, the Breusch-Pagan test, gives a P-value of 0.01755 therefore rejecting the null hypothesis that the variance of the residual is constant.  As a remedial measure, a box cox transformation is done below. 
 
-## Residual diganostics for Transformed reduced model
-```{r}
+
+## Residual diganostics for Transformed reduced model  
+  
+Figure 15.  
+```{r,echo=FALSE}
+bc_reduced <- boxCox(bp_reduced, main="Figure 15. Box Cox for the reduced model")
 lambda_reduced <- bc_reduced$x[which.max(bc_reduced$y)]
-lambda_reduced
 ```
 
 ## Transformed reduced model
-```{r}
-
+```{r,echo=FALSE,results='hide'}
+ 
 k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
 bp_train %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_train
 
-bp_reduced_t <- lm(data=bp_train, sbp_reduced_t~smoke + exercise + height + alcohol + trt + bmi)
+bp_reduced_t <- lm(data=bp_train, sbp_reduced_t~gender + smoke + exercise + weight + alcohol + 
+    trt + chldbear)
 summary(bp_reduced_t)
-
-bptest(bp_reduced_t)
 ```
+Again, using a box-cox transformation,  = 1.030303. Figure 15. show the box cox plot for the reduced model, in which the maximum lambda is 1.030303. Using the equation from Figure 8b. to apply the transformation on the SBP values in the data set. Then use this new transformed data to regress over the same covariates.
+
+
 
 ## Residual diagnosis for transformed reduced  model
-```{r}
-qqnorm(bp_reduced_t$residuals)
-qqline(bp_reduced_t$residuals)
-hist(x=bp_reduced_t$residuals, xlab='Residuals', main= paste("Density of Residuals for transformed full model"))
-#augment(bp_full)
-ggplot(bp_reduced_t, aes(x=.fitted, y=.resid)) + geom_point() + labs(x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
-bc_reduced2 <- boxcox(bp_reduced_t)
+```{r,echo=FALSE}
+augment(data=bp_train, x=bp_reduced_t) -> bp_train.a
+g1 <- ggplot(bp_train.a, aes(sample=.resid)) +stat_qq() + stat_qq_line() + labs(title = "Figure 16. Normal Q-Q Plot ")
+g2 <- ggplot(bp_train.a, aes(x= .resid)) + geom_histogram(bins=10) + labs(title = "Figure 17. Frequency of Residuals", x="Residual") 
+g3 <- ggplot(bp_train.a, aes(x=.fitted, y=.resid)) + geom_point() + labs(title = "Figure 18. Fitted vs. Residuals", x="Fitted", y="Residuals")+ geom_hline(yintercept = 0)
+# add bf test here; didnt work earlier
+ggarrange(g1,g2,g3) -> plots
+annotate_figure(plots, top = text_grob("Plots for the residual values for the transformed reduced model", color = "red", face = "bold", size = 14))
+
+```
+
+```{r,echo=FALSE,results='hide'}
 shapiro.test(bp_reduced_t$residuals)
-bptest(bp_reduced_t, studentize = F)
+bptest(bp_reduced_t, studentize = F) 
 ```
-```{r}
-bp_train %>% mutate(resid = rstandard(bp_reduced_t)) -> bp_train
 
-bp_train  %>% dplyr::select(c(resid, smoke , exercise , height , alcohol , trt , bmi)) %>% 
-  pivot_longer(c (smoke , exercise , height , alcohol , trt , bmi), names_to = "xnames", values_to = "x") %>%
-  ggplot(aes(x=x, y=resid))  + geom_point() + facet_wrap(~xnames, scales = "free") + geom_smooth(method="lm", se=F)
-```
-# Case 3
-```{r}
-bp_train %>% mutate(s.hat = abs(bp_reduced_t$residuals)) -> bp_train
-fit = lm(s.hat~ smoke + exercise + height + alcohol + 
-    trt + bmi, data=bp_train)
+Similarly to the past residual diagnosis, the graphs give the same result, figure 16 and figure 17, showing that the residuals are from a normally distributed sample. However, figure 18. shows that there could be some issue with error variance being constant. Using Shapiro-Wilk test to verify the normality, since P-value as 0.4873 is greater than 0.05, therefore failing to reject the null hypothesis that the residuals are from a normal sample. With the Breusch-Pagan test, the p-value is 0.002354, which is less than 0.05, thus rejecting the null hypothesis that the error terms have constant variance.
+
+
+
+## Remedial measures: Weighted least squares 
+```{r,echo=FALSE}
+
+bp_resids = rstandard(bp_reduced_t)
+bp_s.hat = abs(bp_resids)
+bp_train %>% mutate(s.hat = bp_s.hat) -> bp_train_wls
+
+fit = lm(s.hat~gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data=bp_train_wls)
 var.s1 = predict(fit)^2
-mod1 <- lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s1)
+
+mod1 <- lm(sbp_reduced_t ~ gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data = bp_train_wls, weight=1/var.s1)
 
 
-y.hat <- predict(bp_reduced_t); e.1  <- resid(bp_reduced_t)
-
+y.hat <- predict(bp_reduced_t)
+e.1  <- resid(bp_reduced_t)
 mod2 <- lm(abs(e.1)~y.hat)
-
 var.s = (mod2$fitted.values)^2
-mod3 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s)
-
+mod3 = lm(sbp_reduced_t ~ gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data = bp_train_wls, weight=1/var.s)
 
 
 e.2 = mod3$residuals
 yhat.2 = predict(mod3)
 mod4 = lm(abs(e.2)~yhat.2)
 var.s2 = (mod4$fitted.values)^2
-mod5 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s2)
+mod5 = lm(sbp_reduced_t ~ gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data = bp_train_wls, weight=1/var.s2)
 
 
 e.3 = mod5$residuals
 yhat.3 = predict(mod5)
 mod6 = lm(abs(e.3)~yhat.3)
 var.s3 = (mod6$fitted.values)^2
-mod7 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s3)
+mod7 = lm(sbp_reduced_t ~ gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data = bp_train_wls, weight=1/var.s3)
 
 e.4 = mod7$residuals
 yhat.4 = predict(mod7)
 mod8 = lm(abs(e.4)~yhat.4)
 var.s4 = (mod8$fitted.values)^2
-mod9 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s4)
+mod9 = lm(sbp_reduced_t ~ gender + smoke + exercise + 
+    weight + alcohol + trt + chldbear, data = bp_train_wls, weight=1/var.s4)
 
-e.5 = mod9$residuals
-yhat.5 = predict(mod9)
-mod10 = lm(abs(e.5)~yhat.5)
-var.s5 = (mod10$fitted.values)^2
-mod11 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s5)
-
-
-e.6 = mod11$residuals
-yhat.6 = predict(mod11)
-mod12 = lm(abs(e.6)~yhat.6)
-var.s6 = (mod12$fitted.values)^2
-mod13 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s6)
-
-cbind(coefficients(fit),coefficients(mod3),coefficients(mod5), coefficients(mod7),coefficients(mod9),coefficients(mod11), coefficients(mod13))
-bptest(mod9)
 ```
 
-```{r}
-e.7 = mod13$residuals
-yhat.7 = predict(mod13)
-mod14 = lm(abs(e.7)~yhat.7)
-var.s7 = (mod14$fitted.values)^2
-mod15 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s7)
-
-e.8= mod13$residuals
-yhat.8 = predict(mod15)
-mod16 = lm(abs(e.8)~yhat.8)
-var.s8 = (mod16$fitted.values)^2
-mod17 = lm(sbp_reduced_t ~ smoke + exercise + height + alcohol + 
-    trt + bmi, data = bp_train, weight=1/var.s8)
-
+```{r,echo=FALSE, results='hide'}
 cbind(coefficients(bp_reduced_t),coefficients(mod1),coefficients(mod3),coefficients(mod5), coefficients(mod7),coefficients(mod9))
 ```
 
-```{r}
+```{r, results='hide',messages= FALSE, warning=FALSE, echo=FALSE, fig.height = 5, fig.width=10}
+augment(data=bp_train_wls, x=mod9) -> bp_train_wls
+bp_train_wls  %>% 
+  pivot_longer(c(weight), names_to = "xnames", values_to = "x" )%>%
+  ggplot(aes(x=x, y=(.resid))) + labs(title="Figure 19. Residuals vs Weight") + geom_point() + facet_wrap(~xnames, scales = "free") -> fig19
+
+
+
+bp_train_wls  %>% 
+  pivot_longer(c(gender , smoke , exercise  , alcohol,trt , chldbear), names_to = "xnames", values_to = "x" )%>%
+  ggplot(aes(x=factor(x), y=(.resid))) + labs(title="Figure 20. Residuals vs Categorical Variables") + geom_boxplot() + facet_wrap(~xnames, scales = "free") + geom_hline(yintercept = 0) -> fig20
+
+ggarrange(fig19, fig20)
+```
+In figure 19. residual values of the fitted weight least squares model are plotted against weight. There seems to be a random scatter of points on this plot, verifying that the residuals do not depends on this covariate. In Figure 20. the whiskers of the box-plot for treatment, seems to give the residuals more variance one with, than one without. Chldbear, follows a similar pattern where the whiskers are slowly shortening but slightly. In addition, the rest of the box-plots shows more of a constant variance of the residuals.
+
+```{r,echo=FALSE, results='hide'}
 summary(mod9)
 ```
 
 
-```{r}
-bp_reduced_t2 <- lm(sbp_reduced_t ~ smoke + exercise + height + alcohol  + bmi, data = bp_train)
-
-bptest(bp_reduced_t2, studentize = F)
-anova(bp_reduced_t, bp_reduced_t2)
-```
-
-
-## Influence Diagnostics
 
 
 ## Graphical Diagnostics for influence
-```{r}
+```{r,echo=FALSE, fig.width=9, fig.show='hide'}
 #p1 <- ols_plot_added_variable(bp_reduced)
-p2 <- ols_plot_cooksd_chart(mod7)
-p3 <- ols_plot_dffits(mod7)
-p4 <- ols_plot_resid_lev(mod7)
-p5 <- ols_plot_resid_stud_fit(mod7)
-ols_plot_dfbetas(mod7)
+par(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+p2 <- ols_plot_cooksd_chart(mod9, print_plot =T)
+p3 <- ols_plot_dffits(mod9, print_plot =T)
+p4 <- ols_plot_resid_lev(mod9, print_plot =T)
+p5 <- ols_plot_resid_stud_fit(mod9, print_plot =T)
 ```
-## Removing outliers
-```{r}
-#83, 155 , 293, 135, 261, 300, 35, 25, 256, 201, 292, 242, 263
+```{r, warning=FALSE}
+ols_plot_dfbetas(mod9, print_plot =T)
+ggarrange(p2, p3,p4,p5)
 
-t = rstudent(bp_reduced3)
-#round(t,2)
-n = 300
-p.prime = 7
-alpha = 0.05
-t.crit = qt(1-alpha/(2*n), n - p.prime -1)
-which(abs(t) > t.crit)
-bp_train %>% filter(!row_number() %in% c(263) )  -> outliers_rm
-bp_reduced4 <- lm(sbp_full_transformed~smoke + exercise + height + alcohol + trt + bmi, data=outliers_rm)
 ```
 
 
-```{r}
-hii = hatvalues(bp_reduced_t)
-which(hii > 2*7/300)
-```
-
-
-```{r}
-p7 <- ols_plot_cooksd_chart(bp_reduced4)
-p8 <- ols_plot_dffits(bp_reduced4)
-p9 <- ols_plot_resid_lev(bp_reduced4)
-p10 <- ols_plot_resid_stud_fit(bp_reduced4)
-bptest(bp_reduced4)
-```
+Observing Cooks D chart and the influence diagnostic plots, it can be seen that the most influential points are 25,35, 53. However, overall there are many influential observations such that if these influential points were to be gotten rid of, there is a possiblity would be another set of them after with the way they are scattered.  
+The outlier and leverage diagnostics plot. shows that observation 53 has leverage and is an outlier. Outlier values in this figure shows that it is in a triangular shape. When ridding the data of these influential points there is a possibility of another set of outliers being present. The deleted studentized residual vs. Predictor plot also has an abundance of outliers. Again, removing these outliers could create another set of outliers here. Therefore, removing these outliers would probably not have much effect on the data set.
 
 ## Cross validation for main effect model
-
-```{r}
-
-#preds_cols <- c('gender' , 'married' , 'smoke' , 'exercise' , 'age' , 'weight' , 'height' , 'overwt' , 'race' , 'alcohol' , 'trt' ,'bmi' ,'stress' , 'salt' , 'chldbear' , 'income' , 'educatn')
+```{r, echo=FALSE,results='hide'}
+#summary(bp_reduced_t)
+#summary(bp_full_transformed)
 anova(mod9)
-summary(mod9)
+anova(bp_reduced_t)
+anova(bp_full_transformed)
+
+# Grabbing MSE from these charts
+```
+
+
+```{r,echo=FALSE}
+# Calculating MSPR
 k2 <- prod(bp_valid$sbp^(1/200))
 k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
 bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
 #bp_valid
-preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
-pred_bp <- predict(mod9, bp_valid[preds_cols])
-delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
+pred_bp <- predict(mod9, bp_valid)
+delta_bp <- (bp_valid['sbp_reduced_t'] - pred_bp)
 n.star <- dim(bp_valid)[1]
-MSPR <- sum((delta_bp)^2)/200
-MSPR
-MSE <- sum(mod9$residuals^2)/200
-MSE
+MSPR_WLS <- sum((delta_bp)^2)/n.star
 ```
 
-- MSPR = 731.854
-- MSE = 1.666
 
-
-however,
-
-```{r}
-anova(bp_reduced_t)
-
+```{r,echo=FALSE}
+# Calculating MSPR
 k2 <- prod(bp_valid$sbp^(1/200))
 k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
 bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
-preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
+preds_cols <- c( 'gender', 'smoke' , 'exercise' , 'weight', 'alcohol', 'trt' ,'chldbear')
 pred_bp <- predict(bp_reduced_t, bp_valid[preds_cols])
 delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
 n.star <- dim(bp_valid)[1]
-MSPR <- sum((delta_bp)^2)/n.star
-MSPR
-MSE <- sum(bp_reduced_t$residuals^2)/300
-MSE
+MSPR_reduced <- sum((delta_bp)^2)/n.star
 ```
 
 
 
-```{r}
-stepAIC(mod9, direction="backward")
-```
-
-```{r}
-stepAIC(bp_reduced_t, direction="backward")
-```
-
-
-
-```{r}
-anova(bp_full_transformed)
-
+```{r,echo=FALSE}
+# Calculating MSPR
 k2 <- prod(bp_valid$sbp^(1/200))
-k1_r <- 1/(lambda_reduced*k2^(lambda_reduced-1))
-bp_valid %>% mutate(sbp_reduced_t = k1_r*(sbp^lambda_reduced - 1)) -> bp_valid
-preds_cols <- c( 'smoke' , 'exercise' , 'height', 'alcohol' , 'trt' ,'bmi'  )
-pred_bp <- predict(bp_full_transformed, bp_valid[preds_cols])
-delta_bp <- bp_valid['sbp_reduced_t'] - pred_bp
+k1_r <- 1/(lambda_full*k2^(lambda_full-1))
+bp_valid %>% mutate(sbp_full_transformed = k1_r*(sbp^lambda_full - 1)) -> bp_valid
+pred_bp <- predict(bp_full_transformed)
+delta_bp <- bp_valid['sbp_full_transformed'] - pred_bp
 n.star <- dim(bp_valid)[1]
-MSPR <- sum((delta_bp)^2)/n.star
-MSPR
-MSE <- sum(bp_full_transformed$residuals^2)/300
-MSE
+MSPR_full <- sum((delta_bp)^2)/n.star
 ```
 
-
-
-```{r}
-PRESS(bp_reduced_t)
-PRESS(mod9)
+```{r,echo=FALSE}
+mse_wls <- 1.667
+mse_reduced  <- 628.9
+mse_full <- 630.8 
+tab <- matrix(c(mse_wls, mse_reduced, mse_full, MSPR_WLS, MSPR_reduced,MSPR_full), ncol=3, nrow=2, byrow=T)
+colnames(tab) <- c('WLS Model','Reduced Model','Full Model')
+rownames(tab) <- c('MSE' , 'MSPR')
+tab <- as.table(tab)
+tab
 ```
 
+The WLS model seems to be overfitting the data, given a very low MSE. In addition, the reduced model has more 
 
 
-#    -
-# -
-# -
+```{r, echo=FALSE}
 
-# Adding interaction terms 
+PRESS_full <- round(PRESS(bp_full_transformed),2)
+PRESS_reduced <-round(PRESS(bp_reduced_t),2)
+PRESS_wls <- round(PRESS(mod9),2)
+
+r2_wls <-  round(summary(mod9)$r.squared,2)
+r2_reduced <- round(summary(bp_reduced_t)$r.squared,2)
+r2_full <- round(summary(bp_full_transformed)$r.squared,2)
+
+adj_r2_wls <- round(summary(mod9)$adj.r.squared,2)
+adj_r2_reduced <- round(summary(bp_reduced_t)$adj.r.squared,2)
+adj_r2_full <- round(summary(bp_full_transformed)$adj.r.squared,2)
+# Extracted from anova table
 
 
-```{r}
-#With interactions
-bp_full_int <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn + overwt + income:educatn + gender:chldbear + stress:alcohol  + stress:weight + stress:overwt + income:age + weight:overwt + bmi:weight + bmi:height  + alcohol:smoke + height:gender + weight:gender + income:stress + educatn:stress  + smoke:exercise + income:chldbear  + chldbear:married + salt:exercise)
+# reduced/full aic retrieved from when stepAIC() function ran
+aic_wls <- round(extractAIC(mod9)[2],2)
+aic_reduced <- round( extractAIC(bp_reduced_t)[2],2)
+aic_full <- round(extractAIC(bp_full_transformed)[2],2)
 
-summary(bp_full_int)
+tab <- matrix(c(r2_wls,r2_reduced,r2_full,adj_r2_wls,adj_r2_reduced,adj_r2_full,aic_wls,aic_reduced,aic_full,PRESS_wls,PRESS_reduced,PRESS_full,mse_wls, mse_reduced, mse_full, MSPR_WLS, MSPR_reduced,MSPR_full), ncol=3, nrow=6, byrow=T)
+colnames(tab) <- c('WLS Model','Reduced Model','Full Model')
+rownames(tab) <- c('R squared','R Squared adj', 'AIC','PRESS', 'MSE' , 'MSPR')
+tab <- as.table(tab)
+tab
 ```
-
-- since $R^2$ is really low for blood pressure, we need to add more terms. 
-- added interaction terms to see if $R^2$ goes up significantly or not.
-
-
-## Residual diagnostics of the interaction model
-
-```{r}
-qqnorm(bp_full_int$residuals)
-qqline(bp_full_int$residuals)
-hist(bp_full_int$residuals)
-#augment(bp_full)
-ggplot(bp_full_int, aes(x=.fitted, y=.resid)) + geom_point() + geom_hline(yintercept = 0)
-boxcox(bp_full_int)
-shapiro.test(bp_full_int$residuals)
-bptest(bp_full_int)
-```
-- This model looks like it has residuals that are
-
-
-## AIC/BIC with interaction terms
-```{r}
-stepAIC(bp_full_int, direction = "backward")
-#AIC=1934.13
-```
-
-
-
-```{r}
-bp_reduced_int <- lm(sbp ~ gender + smoke + exercise + age + weight + alcohol + trt + 
-    stress + salt + chldbear + income + educatn + income:educatn + 
-    weight:stress + age:income + smoke:alcohol + exercise:salt, data=bp_train)
-summary(bp_reduced_int)
-```
-
-## PRESS Statistic for interaction model
-
-```{r}
-PRESS(bp_reduced3)
-```
-
-
-
-
-## Multicollinearity
-VIF:
-```{r}
-R_int <- summary(bp_full_int)$r.squared
-VIF_int <- 1/(1-R_int)
-VIF_int
-```
-- low VIF, not likely to have a multicollinearity problem with this model
-
-```{r}
-anova(bp_reduced_int, bp_full_int)
-```
-- With interaction terms model -- P-value > 0.05, reduced model is sufficient
-
-
-## Cross Validation for interaction model
-```{r}
-# fit model for training set
-# gender + married + smoke + exercise + age + height + race + 
-#    alcohol + trt + bmi + stress + chldbear + income + educatn + 
-#    overwt + income:educatn + trt:overwt + married:stress + 
-#    smoke:exercise + alcohol:educatn
-
-bp_valid %>% mutate(`income:educatn` = income*educatn, `trt:overwt` = trt*overwt, `married:stress` = married*stress, `smoke:exercise` = smoke*exercise, `alcohol:educatn` = alcohol*educatn) -> bp_valid_int
-anova(bp_reduced_int)
-
-pred_cols_int <- c('gender', 'married', 'smoke', 'exercise', 'age', 'height', 'race', 'alcohol' , 'trt', 'bmi', 'stress', 'chldbear', 'income', 'educatn', 'overwt', 'income:educatn', 'trt:overwt', 'smoke:exercise', 'alcohol:educatn')
-
-pred_bp_int <- predict(bp_reduced_int, bp_valid_int[pred_cols_int])
-delta_bp_int <- bp_valid_int['sbp'] - pred_bp_int
-n.star_int <- dim(bp_valid_int)[1]
-MSPR_int <- sum((delta_bp_int)^2)/n.star_int 
-MSPR_int
-```
-
-- MSE = 607.6
-- MSPR = 666.486
-
-
-```{r}
-PRESS(lm_AIC_int)
-```
-
-
-## Graphical Diagnostics 
-
-```{r}
-p2_int <- ols_plot_cooksd_chart(bp_reduced)
-p3_int <- ols_plot_dffits(bp_reduced)
-p4_int <- ols_plot_resid_lev(bp_reduced)
-p5_int <- ols_plot_resid_stud_fit(bp_reduced)
-p6_int <- ols_plot_dfbetas(bp_reduced)
-```
-- We have a couple of outliers, however majority of these values are within
-the threshold 
-- observation 263 gives us the highest influence, it is an outlier
-
-
-## Remedial measures
-
-
 
 # Conclusion
-
-- Interaction terms made it so MSE is further away from MSPR which isn't what we want.
-- all models were significant since their p-values < 0.05
-- AIC with the interaction terms are much better.
-- $R^2$ is better with the interaction terms
-- both models are significant
-- $R^2$ in general is low, we may need more predictors
-- $R^2$ is really low even after adding interaction terms, this means we are missing a couple of important predictors.
-- our best model would be the one with interactions so far
+Although the other models 
