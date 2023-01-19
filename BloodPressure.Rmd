@@ -1,9 +1,11 @@
 ---
-title: "Blood Pressure"
+title: "Determining the Factors Effecting Systolic Blood Pressure Predictions"
 author: "John Ma, Ben Mak, Micheal Chen"
 output:
-  pdf_document: default
   html_notebook: default
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 
 
@@ -15,7 +17,7 @@ library(corrplot);library(MPV);library(olsrr);library(ggpubr);library(lmtest);li
 ```
 # Introduction
 
- Studies have shown that SBP is an important marker in the risk of all-cause mortality and chronic diseases, some of which include heart attacks, strokes, and diabetes. When reading blood pressure with a machine, there are two readings. One which is the higher number which is the SBP and diastolic pressure is the lower number. SBP measures the force of blood being pushed around the body when your heart contracts. (surname, data)  In this analysis, the objective is to determine which factors have an impact on systolic blood pressure (SBP) and to create a model to predict the systolic blood pressure for a person. The analysis uses the process described in the textbook Applied Linear Regression Models, on page 344.
+ Studies have shown that systolic blood pressure (SBP) is an important marker in the risk of all-cause mortality and chronic diseases, some of which include heart attacks, strokes, and diabetes (Böhm, 2020). When reading blood pressure with a machine, there are two readings. One which is the higher number which is the SBP and diastolic pressure is the lower number. SBP measures the force of blood being pushed around the body when your heart contracts. (Bhyan, 2018)  In this analysis, the objective is to determine which factors have an impact on systolic blood pressure (SBP) and to create a model to predict the systolic blood pressure for a person. The analysis uses the process described in the textbook Applied Linear Regression Models, on page 344.
   
 The continuous covariates in the data set are age, bmi, height, and weight. BMI is dependent on height and weight as BMI is calculated as weight/height2. Height is in centimeters, age is in years, weight is in kilograms. The categorical variables are alcohol usage as alcohol, childbearing potential as chldbear, education level as educatn, exercise level as exercise, gender, income level as income, marital status as married, overweight status as overwt, race, salt level as salt, if someone is a smoker as smoke, stress level as stress and hypertension treatment as trt. Alcohol usage, childbearing potential
 
@@ -68,17 +70,19 @@ bp_cor <- cor(bp_train)
 corrplot(bp_cor,title="Figure 3. Correlation matrix plot",mar=c(0,0,2,0),
          diag=TRUE)
 ```
-Using Figure 3, it is seen that the covariates that have the strongest relationship with SBP are smoke, exercise, weight, height, overweight, alcohol, TRT, and BMI. The other covariates do not seem to have that strong of a relationship with SBP.  BMI is strongly correlated with height, weight and overweight which raises a multicollinearity problem if it were to be added to the model
+Using Figure 3, it is seen that the covariates that have the strongest relationship with SBP are smoke, exercise, weight, height, overweight, alcohol, TRT, and BMI. The other covariates do not seem to have that strong of a relationship with SBP.  BMI is strongly correlated with height, weight and overweight which raises a multicollinearity problem if it were to be added to the model. Ideally would be better to remove it.
 
-# Main Effect Full Model
-
+# Main Effect Full Model  
+  
+    
+Figure 4. VIF values of all covariates
 ```{r,echo=FALSE}
 bp_full <- lm(data=bp_train, sbp ~ gender + married + smoke + exercise + age + weight + height + overwt + race + alcohol + trt + bmi + stress + salt + chldbear + income + educatn)
 vif(bp_full)
 ```
 
 ## Variance Inflation Factor
-Looks like there is a multicollinearity problem with weight, height, and BMI. Gender and chldbear seems to have a VIF about 5~ and could pose as a problem. Removing BMI could be beneficial to get a more accurate model. In addition, BMI = $weight/height^2$, and that a higher BMI depending on the gender, determines if a person is overweight or not. The data seems like it is using BMI to determine someone is overweight or not.
+Looks like there is a multicollinearity problem with weight, height, and BMI. Gender and chldbear seems to have a VIF about 5~ and could pose as a problem. Removing BMI could be beneficial to get a more accurate model. In addition, BMI = $weight/height^2$, and that a higher BMI depending on the gender, determines if a person is overweight or not. (CDC,2021) The data seems like it is using BMI to determine someone is overweight or not. 
 
 
 ```{r, echo=FALSE, results='hide'}
@@ -88,7 +92,8 @@ summary(bp_full2)
 anova(bp_full2, bp_full)
 ```
 Doing the ANOVA test, shows that reduced model has the same effect as the full model as the p-value > 0.05. Thus we can continue to do some of the residual diagnostics with this model.
-
+  
+Figure 4. VIF values of all covariates witout BMI
 ```{r, echo=FALSE}
 vif(bp_full2)
 ```
@@ -119,7 +124,7 @@ bptest(bp_full2, studentize = F)
 ```
 
 ## Transformed full model
-```{r,echo=FALSE}
+```{r,echo=FALSE, fig.show='hide'}
 bc_full2 <- boxCox(bp_full2, main="Figure 8. Box cox for the full model")
 ```
 
@@ -199,7 +204,7 @@ The residuals values of this model look normally distributed in reference to Fig
 ## Residual diganostics for Transformed reduced model  
   
 Figure 15.  
-```{r,echo=FALSE}
+```{r,echo=FALSE, fig.show='hide'}
 bc_reduced <- boxCox(bp_reduced, main="Figure 15. Box Cox for the reduced model")
 lambda_reduced <- bc_reduced$x[which.max(bc_reduced$y)]
 ```
@@ -322,8 +327,16 @@ p3 <- ols_plot_dffits(mod9, print_plot =T)
 p4 <- ols_plot_resid_lev(mod9, print_plot =T)
 p5 <- ols_plot_resid_stud_fit(mod9, print_plot =T)
 ```
-```{r, warning=FALSE}
+
+```{r}
 ols_plot_dfbetas(mod9, print_plot =T)
+```
+
+The DFBETAS plots show that observations 53 seems to give the influence above the threshold on all the covariates. In addition, trt has the least amount of observations above the threshold for DFBETAS and exercise has the most above the threshold. Observations 53 for exercise seems to affect the covariate trt a lot more than the other observations. Alcohol seems to be the least affected by observations 53. 
+
+
+```{r, warning=FALSE}
+
 ggarrange(p2, p3,p4,p5)
 
 ```
@@ -376,7 +389,7 @@ MSPR_reduced <- sum((delta_bp)^2)/n.star
 k2 <- prod(bp_valid$sbp^(1/200))
 k1_r <- 1/(lambda_full*k2^(lambda_full-1))
 bp_valid %>% mutate(sbp_full_transformed = k1_r*(sbp^lambda_full - 1)) -> bp_valid
-pred_bp <- predict(bp_full_transformed)
+pred_bp <- predict(bp_full_transformed,bp_valid)
 delta_bp <- bp_valid['sbp_full_transformed'] - pred_bp
 n.star <- dim(bp_valid)[1]
 MSPR_full <- sum((delta_bp)^2)/n.star
@@ -393,9 +406,9 @@ tab <- as.table(tab)
 tab
 ```
 
-The WLS model seems to be overfitting the data, given a very low MSE. In addition, the reduced model has more 
+The WLS model seems very likely to be over fitting the data, given a very low MSE of 1.667, in comparison to the MSPR of 745.4301. In addition, the reduced model has a MSPR of 720.4247 and a MSE of 628.9. While the full model has an MSE of 630.8 and a MSPR of 674.2833. The reduced model would be considered less valid than the full model since there is a greater difference between MSPR and MSE with the reduced model than the full model.
 
-
+# Conclusion
 ```{r, echo=FALSE}
 
 PRESS_full <- round(PRESS(bp_full_transformed),2)
@@ -424,5 +437,30 @@ tab <- as.table(tab)
 tab
 ```
 
-# Conclusion
-Although the other models 
+
+
+To conclude, the transformed full model is the most reliable model since it is the only model out of the three that has passed the residual diagnostics, in addition having MSE and MSPR closer than the other two models. Both the reduced model and WLS model have issues with variance of the error terms being constant.  
+
+The full model equation:
+
+
+$$Y = 182.19336 + 9.71851(gender) + 2.96943(married) + 14.99813(smoke)$$  
+$$  - 7.81869(exercise) + 0.08189(age) + 0.09049(weight) + 0.16125(height) +$$ 
+$$  4.08000(overwt) + 0.38382(race) +  6.80274(alcohol) - 13.55571(trt) +$$ 
+$$ 0.46647(stress) + 0.10333(salt) + 6.38980(chldbear)+$$  
+$$ 1.00487(income) + 0.57094(educatn)$$
+
+
+
+Using the table above, it shows that the $R^2$ for all models are quite low. In addition it also shows that MSE and MSRP have a high difference for the WLS model. With these in mind, it can be considered that there could be a possibility of this model missing key predictors. SBP seems to be mostly correlated to smoking status, exercise, alcohol consumption, child bearing potential, treatment status, weight and gender.
+
+
+
+# Reference List
+
+
+Bhyan, Poonam, et al. “ASSOCIATIONS OF SYSTOLIC BLOOD PRESSURE (SBP) <120 (VERSUS 120-139) MMHG WITH OUTCOMES IN PATIENTS WITH HEART FAILURE AND PRESERVED EJECTION FRACTION (HFPEF) WITHOUT HYPERTENSION (HTN).” Journal of the American College of Cardiology, vol. 71, no. 11, Elsevier Inc, 2018, pp. A919–A919, https://doi.org/10.1016/S0735-1097(18)31460-8.
+
+Böhm, Michael, et al. “Heart Failure and Renal Outcomes According to Baseline and Achieved Blood Pressure in Patients with Type 2 Diabetes: Results from EMPA-REG OUTCOME.” Journal of Hypertension, vol. 38, no. 9, Copyright Wolters Kluwer Health, Inc. All rights reserved, 2020, pp. 1829–40, https://doi.org/10.1097/HJH.0000000000002492.
+
+Centers for Disease Control and Prevention. (2021, August 27). About adult BMI. Centers for Disease Control and Prevention. Retrieved April 10, 2022, from https://www.cdc.gov/healthyweight/assessing/bmi/adult_bmi/index.html#Interpreted 
